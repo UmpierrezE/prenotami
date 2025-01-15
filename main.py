@@ -16,6 +16,8 @@ import sys
 import time
 import random
 import undetected_chromedriver as udc
+from telegram import Bot
+import asyncio
 
 load_dotenv()
 
@@ -27,6 +29,9 @@ logging.basicConfig(
 
 
 class Prenota:
+    MAX_ATTEMPTS = 3  # Máximo número de intentos antes de esperar
+    WAIT_TIME = 600    # 10 minutos en segundos (600 segundos)
+
     @staticmethod
     def check_file_exists(file_name):
         file_path = os.path.join(os.getcwd(), file_name)
@@ -61,7 +66,7 @@ class Prenota:
     @staticmethod
     def fill_citizenship_form(driver, user_config):
         try:
-            driver.get("https://prenotami.esteri.it/Services/Booking/2392")
+            driver.get("https://prenotami.esteri.it/Services/Booking/1022")
             time.sleep(6)
             if not Prenota.check_for_dialog(driver):
                 file_location = os.path.join("files/residencia.pdf")
@@ -79,13 +84,15 @@ class Prenota:
             return False
 
     @staticmethod
-    def fill_passport_form(driver, user_config):
+    async def fill_passport_form(driver, user_config):
         try:
             time.sleep(10)
-            driver.get("https://prenotami.esteri.it/Services/Booking/1319")
+            driver.get("https://prenotami.esteri.it/Services/Booking/4950")
             time.sleep(5)
 
             if not Prenota.check_for_dialog(driver):
+                await Prenota.send_message('hay turno!!!!!!!!!!!!!!!!!!! :)))))))')
+               
                 with open("files/passport_form.html", "w") as f:
                     f.write(driver.page_source)
 
@@ -121,73 +128,118 @@ class Prenota:
                 form_submit.click()
 
                 return True
+            else:
+                #await Prenota.send_message('no turno')
+                print('no turno')
         except Exception as e:
             logging.info(f"Exception {e}")
             return False
+    @staticmethod
+    async def send_message(message):
+        try:
+            TELEGRAM_TOKEN = '7828614620:AAF_iwuKAncATwOVzjumNHuSNhqw_Bg4xF8'
+            CHAT_ID = '6674438880'
+
+            bot = Bot(token=TELEGRAM_TOKEN)
+            response = bot.send_message(chat_id=CHAT_ID, text=message)
+
+            logging.info("Mensaje enviado: %s", message)
+            logging.info("Contenido de respuesta: %s", response.text)  # Agregar esta línea
+        except Exception as e:
+            logging.error("Error al enviar mensaje: %s", e)
 
     @staticmethod
-    def run():
-        if Prenota.check_file_exists("files/residencia.pdf"):
+    async def run():
+        #if Prenota.check_file_exists("files/residencia.pdf"):
+        logging.info(
+            f"Timestamp: {str(datetime.now())} - Required files available."
+        )
+        email = os.getenv("username")
+        password = os.getenv("password")
+        user_config = Prenota.load_config("parameters.yaml")
+        print(user_config.get("full_address"))
+        options = udc.ChromeOptions()
+        options.headless = False
+        #options.add_argument("--disable-gpu")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
+        options.add_argument("accept-language=en-US,en;q=0.9")
+        options.add_argument("accept=text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+        options.add_argument("--disable-web-security")
+        options.add_argument("--allow-running-insecure-content")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-automation")
+        
+
+
+
+        driver = udc.Chrome(use_subprocess=True, options=options)
+        driver.delete_all_cookies()
+        
+
+
+        try:
+            driver.get("https://prenotami.esteri.it/")
+            await asyncio.sleep(random.uniform(2, 4))  # Introducir un retraso aleatorio
+            email_box = WebDriverWait(driver, 60).until(
+                EC.presence_of_element_located((By.ID, "login-email"))
+            )
+            password_box = driver.find_element(By.ID, "login-password")
+            email_box.send_keys(email)
+            password_box.send_keys(password)
+            # Simular movimientos del mouse
+            await asyncio.sleep(random.uniform(2, 4))
+            time.sleep(4)
+            button = driver.find_elements(
+                By.XPATH, "//button[contains(@class,'button primary g-recaptcha')]"
+            )
+            button[0].click()
             logging.info(
-                f"Timestamp: {str(datetime.now())} - Required files available."
+                f"Timestamp: {str(datetime.now())} - Successfully logged in."
             )
-            email = os.getenv("username")
-            password = os.getenv("password")
-            user_config = Prenota.load_config("parameters.yaml")
-            print(user_config.get("full_address"))
-            options = udc.ChromeOptions()
-            options.headless = False
-            options.add_argument("--disable-gpu")
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            driver = udc.Chrome(use_subprocess=True, options=options)
-            driver.delete_all_cookies()
+            time.sleep(10)
+        except Exception as e:
+            logging.info(f"Exception: {e}")
 
-            try:
-                driver.get("https://prenotami.esteri.it/")
-                email_box = WebDriverWait(driver, 60).until(
-                    EC.presence_of_element_located((By.ID, "login-email"))
-                )
-                password_box = driver.find_element(By.ID, "login-password")
-                email_box.send_keys(email)
-                password_box.send_keys(password)
-                time.sleep(4)
-                button = driver.find_elements(
-                    By.XPATH, "//button[contains(@class,'button primary g-recaptcha')]"
-                )
-                button[0].click()
-                logging.info(
-                    f"Timestamp: {str(datetime.now())} - Successfully logged in."
-                )
-                time.sleep(10)
-            except Exception as e:
-                logging.info(f"Exception: {e}")
+        attempt_counter = 0  # Inicializa el contador de intentos
+        
+        for i in range(200):
+            random_number = random.randint(1, 5)
 
-            for i in range(200):
-                random_number = random.randint(1, 5)
-
-                if user_config["request_type"] == "citizenship":
-                    if Prenota.fill_citizenship_form(driver, user_config):
-                        break
-                elif user_config["request_type"] == "passport":
-                    if Prenota.fill_passport_form(driver, user_config):
-                        break
-
-                time.sleep(random_number)
-
-            user_input = input(
-                f"Timestamp: {str(datetime.now())} - Go ahead and fill manually the rest of the process. "
-                f"When finished, type quit to exit the program and close the browser. "
-            )
-            while True:
-                if user_input == "quit":
-                    driver.quit()
+            if user_config["request_type"] == "carta":
+                if await Prenota.fill_citizenship_form(driver, user_config):
                     break
-        else:
-            logging.info(
-                "Required files are not available. Check the required files in README.md file. Ending execution."
-            )
-            sys.exit(0)
+            elif user_config["request_type"] == "passport":
+                if await Prenota.fill_passport_form(driver, user_config):
+                    break
+
+            attempt_counter += 1  # Incrementa el contador en cada intento
+
+            # Si hemos hecho 3 intentos, esperamos 10 minutos antes de continuar
+            if attempt_counter >= Prenota.MAX_ATTEMPTS:
+                logging.info(f"Esperando {Prenota.WAIT_TIME / 60} minutos antes de reintentar...")
+                await asyncio.sleep(Prenota.WAIT_TIME)  # Esperar 10 minutos
+                attempt_counter = 0  # Reinicia el contador de intentos
+
+            await asyncio.sleep(random_number)
+
+
+        user_input = input(
+            f"Timestamp: {str(datetime.now())} - Go ahead and fill manually the rest of the process. "
+            f"When finished, type quit to exit the program and close the browser. "
+        )
+        while True:
+            if user_input == "quit":
+                driver.quit()
+                break
+        #else:
+        #    logging.info(
+        #        "Required files are not available. Check the required files in README.md file. Ending execution."
+        #    )
+        #    sys.exit(0)
 
 
 if __name__ == "__main__":
-    Prenota.run()
+    asyncio.run(Prenota.run())
+    
+
